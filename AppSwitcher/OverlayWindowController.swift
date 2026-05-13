@@ -2,13 +2,14 @@ import AppKit
 import SwiftUI
 
 final class OverlayWindowController {
-    private static let size = NSSize(width: 440, height: 258)
-    private static let cornerRadius: CGFloat = 18
-
     private let viewModel = OverlayViewModel()
     private lazy var panel: NSPanel = makePanel()
     private var transientHideWorkItem: DispatchWorkItem?
     private var liquidGlassEnabled = false
+    private var currentSize = NSSize(
+        width: OverlayLayout.width,
+        height: OverlayLayout.height(rowCount: AppPreferences.defaultMaxListEntries, showsIcons: false)
+    )
 
     func show() {
         transientHideWorkItem?.cancel()
@@ -25,6 +26,7 @@ final class OverlayWindowController {
         viewModel.title = title
         viewModel.query = query
         viewModel.matches = matches
+        resizePanel(rowCount: matches.count)
     }
 
     func setLiquidGlassEnabled(_ isEnabled: Bool) {
@@ -36,6 +38,15 @@ final class OverlayWindowController {
         installContentView()
     }
 
+    func setShowsIcons(_ showsIcons: Bool) {
+        guard viewModel.showsIcons != showsIcons else {
+            return
+        }
+
+        viewModel.showsIcons = showsIcons
+        resizePanel(rowCount: viewModel.matches.count)
+    }
+
     func showWindowCycle(_ result: WindowCycleResult) {
         let matches = result.windows.enumerated().map { index, window in
             OverlayMatch(
@@ -43,7 +54,8 @@ final class OverlayWindowController {
                 name: window.title,
                 subtitle: result.appName,
                 score: nil,
-                isHighlighted: index == result.selectedIndex
+                isHighlighted: index == result.selectedIndex,
+                icon: result.appIcon
             )
         }
 
@@ -53,7 +65,7 @@ final class OverlayWindowController {
 
     private func makePanel() -> NSPanel {
         let panel = NSPanel(
-            contentRect: NSRect(origin: .zero, size: Self.size),
+            contentRect: NSRect(origin: .zero, size: currentSize),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -76,14 +88,14 @@ final class OverlayWindowController {
     private func installContentView(on targetPanel: NSPanel? = nil) {
         let targetPanel = targetPanel ?? panel
         let hostingView = NSHostingView(rootView: OverlayView(viewModel: viewModel))
-        hostingView.frame = NSRect(origin: .zero, size: Self.size)
+        hostingView.frame = NSRect(origin: .zero, size: currentSize)
         viewModel.usesNativeGlassEffect = false
 
         if liquidGlassEnabled {
             if #available(macOS 26.0, *) {
                 let glassView = NSGlassEffectView(frame: hostingView.frame)
                 glassView.autoresizingMask = [.width, .height]
-                glassView.cornerRadius = Self.cornerRadius
+                glassView.cornerRadius = OverlayLayout.cornerRadius
                 glassView.style = .regular
                 glassView.contentView = hostingView
                 viewModel.usesNativeGlassEffect = true
@@ -93,6 +105,27 @@ final class OverlayWindowController {
         }
 
         targetPanel.contentView = hostingView
+    }
+
+    private func resizePanel(rowCount: Int) {
+        let newSize = NSSize(
+            width: OverlayLayout.width,
+            height: OverlayLayout.height(rowCount: rowCount, showsIcons: viewModel.showsIcons)
+        )
+        guard newSize != currentSize else {
+            return
+        }
+
+        currentSize = newSize
+        viewModel.windowHeight = newSize.height
+
+        let oldFrame = panel.frame
+        let newOrigin = NSPoint(
+            x: oldFrame.midX - newSize.width / 2,
+            y: oldFrame.midY - newSize.height / 2
+        )
+        panel.setFrame(NSRect(origin: newOrigin, size: newSize), display: true)
+        panel.contentView?.frame = NSRect(origin: .zero, size: newSize)
     }
 
     private func centerPanel() {

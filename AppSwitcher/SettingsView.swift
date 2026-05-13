@@ -39,6 +39,18 @@ struct SettingsView: View {
             Toggle("Show Dock icon", isOn: $preferences.showDockIcon)
             Toggle("Cycle same-app windows with Command-`", isOn: $preferences.enableWindowCycling)
             Toggle("Use Liquid Glass overlay style", isOn: $preferences.enableLiquidGlass)
+            Toggle("Show icons in switcher lists", isOn: $preferences.showOverlayIcons)
+
+            HStack {
+                Text("Maximum list entries")
+                Spacer()
+                Stepper(
+                    "\(preferences.maxListEntries)",
+                    value: $preferences.maxListEntries,
+                    in: AppPreferences.maxListEntriesRange
+                )
+                .frame(width: 92)
+            }
 
             HStack {
                 Toggle("Start automatically at login", isOn: Binding(

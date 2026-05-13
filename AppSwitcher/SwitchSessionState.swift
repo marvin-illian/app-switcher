@@ -7,6 +7,7 @@ final class SwitchSessionState {
     private let appProvider: RunningAppProvider
     private let matcher: FuzzyMatcher
     private let overlay: OverlayWindowController
+    private let preferences: AppPreferences
 
     private var appSnapshot: [RunningAppInfo] = []
     private var rankedMatches: [FuzzyMatch<RunningAppInfo>] = []
@@ -16,14 +17,20 @@ final class SwitchSessionState {
     private(set) var isActive = false
     private(set) var query = ""
 
+    var shouldForwardActivationKeyOnFinish: Bool {
+        query.isEmpty && !hasTypedQuery
+    }
+
     init(
         appProvider: RunningAppProvider,
         matcher: FuzzyMatcher,
-        overlay: OverlayWindowController
+        overlay: OverlayWindowController,
+        preferences: AppPreferences
     ) {
         self.appProvider = appProvider
         self.matcher = matcher
         self.overlay = overlay
+        self.preferences = preferences
     }
 
     func begin() {
@@ -77,7 +84,11 @@ final class SwitchSessionState {
         }
 
         let selectedApplication: NSRunningApplication?
-        if query.isEmpty || rankedMatches.isEmpty {
+        if !hasTypedQuery {
+            selectedApplication = nil
+        } else if query.isEmpty {
+            selectedApplication = selectedVisibleApplication?.application
+        } else if rankedMatches.isEmpty {
             selectedApplication = nil
         } else {
             selectedApplication = rankedMatches[visibleSelectedIndex].item.application
@@ -108,27 +119,33 @@ final class SwitchSessionState {
             candidates: appSnapshot,
             name: \.name
         )
+        clampSelectedIndex()
 
         let displayMatches: [OverlayMatch]
         if query.isEmpty {
-            displayMatches = hasTypedQuery ? appSnapshot.prefix(5).map { app in
+            let range = visibleSelectionRange
+            let visibleApps = appSnapshot[range]
+            displayMatches = hasTypedQuery ? visibleApps.enumerated().map { offset, app in
                 OverlayMatch(
                     id: app.id,
                     name: app.name,
                     subtitle: app.bundleIdentifier,
                     score: nil,
-                    isHighlighted: false
+                    isHighlighted: range.lowerBound + offset == selectedIndex,
+                    icon: app.icon
                 )
             } : []
         } else {
-            selectedIndex = min(selectedIndex, max(rankedMatches.prefix(5).count - 1, 0))
-            displayMatches = rankedMatches.prefix(5).enumerated().map { index, match in
+            let range = visibleSelectionRange
+            let visibleMatches = rankedMatches[range]
+            displayMatches = visibleMatches.enumerated().map { offset, match in
                 OverlayMatch(
                     id: match.item.id,
                     name: match.item.name,
                     subtitle: match.item.bundleIdentifier,
                     score: match.score,
-                    isHighlighted: index == selectedIndex
+                    isHighlighted: range.lowerBound + offset == selectedIndex,
+                    icon: match.item.icon
                 )
             }
         }
@@ -145,11 +162,11 @@ final class SwitchSessionState {
     }
 
     private func moveSelection(by offset: Int) {
-        guard isActive, !query.isEmpty else {
+        guard isActive, hasTypedQuery else {
             return
         }
 
-        let count = rankedMatches.prefix(5).count
+        let count = selectionCount
         guard count > 0 else {
             return
         }
@@ -160,7 +177,45 @@ final class SwitchSessionState {
     }
 
     private var visibleSelectedIndex: Int {
-        min(selectedIndex, max(rankedMatches.prefix(5).count - 1, 0))
+        min(selectedIndex, max(selectionCount - 1, 0))
+    }
+
+    private var selectionCount: Int {
+        if query.isEmpty {
+            return appSnapshot.count
+        }
+
+        return rankedMatches.count
+    }
+
+    private var visibleSelectionRange: Range<Int> {
+        let count = selectionCount
+        guard count > 0 else {
+            return 0..<0
+        }
+
+        let visibleLimit = min(preferences.maxListEntries, count)
+        let centeredStart = selectedIndex - visibleLimit / 2
+        let maxStart = count - visibleLimit
+        let start = min(max(centeredStart, 0), maxStart)
+        return start..<(start + visibleLimit)
+    }
+
+    private func clampSelectedIndex() {
+        guard selectionCount > 0 else {
+            selectedIndex = 0
+            return
+        }
+
+        selectedIndex = min(max(selectedIndex, 0), selectionCount - 1)
+    }
+
+    private var selectedVisibleApplication: RunningAppInfo? {
+        guard !appSnapshot.isEmpty else {
+            return nil
+        }
+
+        return appSnapshot[visibleSelectedIndex]
     }
 
     private func activate(_ application: NSRunningApplication) {

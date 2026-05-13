@@ -194,7 +194,7 @@ final class KeyboardMonitor {
         }
 
         if keyCode == activeActivationKeyCode {
-            let shouldForwardEscape = session.query.isEmpty
+            let shouldForwardEscape = session.shouldForwardActivationKeyOnFinish
             let activationKeyCode = activeActivationKeyCode
             let didSwitch = session.finish()
             activeActivationKeyCode = nil

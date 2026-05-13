@@ -8,6 +8,7 @@ struct WindowCycleItem: Identifiable {
 
 struct WindowCycleResult {
     let appName: String
+    let appIcon: NSImage?
     let query: String
     let windows: [WindowCycleItem]
     let selectedIndex: Int
@@ -29,14 +30,21 @@ enum WindowCycleDirection {
 
 final class WindowCycler {
     private let matcher = FuzzyMatcher()
+    private let preferences: AppPreferences
 
     private var cycleProcessIdentifier: pid_t?
     private var cycleApplicationName = "Windows"
+    private var cycleApplicationIcon: NSImage?
     private var cycleQuery = ""
     private var cycleWindows: [AXUIElement] = []
+    private var matchingWindowIndices: [Int] = []
     private var visibleWindowIndices: [Int] = []
-    private var selectedVisibleIndex = 0
+    private var selectedMatchIndex = 0
     private var lastCycleDate = Date.distantPast
+
+    init(preferences: AppPreferences) {
+        self.preferences = preferences
+    }
 
     func cycleCurrentApplicationWindow(direction: WindowCycleDirection) -> WindowCycleResult? {
         guard let frontmostApplication = NSWorkspace.shared.frontmostApplication else {
@@ -52,11 +60,6 @@ final class WindowCycler {
             return nil
         }
 
-        if latestWindows.count == 1, isMinimized(latestWindows[0]) != true {
-            resetCycle()
-            return nil
-        }
-
         let shouldContinueCycle = cycleProcessIdentifier == processIdentifier
             && cycleWindows.count == latestWindows.count
             && Date().timeIntervalSince(lastCycleDate) < 2.5
@@ -64,24 +67,27 @@ final class WindowCycler {
         if !shouldContinueCycle {
             cycleProcessIdentifier = processIdentifier
             cycleApplicationName = frontmostApplication.localizedName ?? "Windows"
+            cycleApplicationIcon = frontmostApplication.icon
             cycleQuery = ""
             cycleWindows = latestWindows
-            visibleWindowIndices = Array(cycleWindows.indices)
+            matchingWindowIndices = Array(cycleWindows.indices)
             let focusedWindow = focusedWindow(for: appElement)
             let currentIndex = focusedWindow.flatMap { focused in
                 latestWindows.firstIndex { candidate in
                     CFEqual(candidate, focused)
                 }
             } ?? 0
-            selectedVisibleIndex = visibleWindowIndices.firstIndex(of: currentIndex) ?? 0
+            selectedMatchIndex = matchingWindowIndices.firstIndex(of: currentIndex) ?? 0
+            refreshVisibleWindowSlice()
         }
 
         return moveSelection(direction: direction)
     }
 
     func moveSelection(direction: WindowCycleDirection) -> WindowCycleResult? {
-        if !visibleWindowIndices.isEmpty {
-            selectedVisibleIndex = (selectedVisibleIndex + direction.offset + visibleWindowIndices.count) % visibleWindowIndices.count
+        if !matchingWindowIndices.isEmpty {
+            selectedMatchIndex = (selectedMatchIndex + direction.offset + matchingWindowIndices.count) % matchingWindowIndices.count
+            refreshVisibleWindowSlice()
         }
 
         lastCycleDate = Date()
@@ -112,12 +118,12 @@ final class WindowCycler {
     @discardableResult
     func commitSelection() -> Bool {
         guard !cycleWindows.isEmpty,
-              !visibleWindowIndices.isEmpty else {
+              !matchingWindowIndices.isEmpty else {
             resetCycle()
             return false
         }
 
-        let selectedWindow = cycleWindows[visibleWindowIndices[selectedVisibleIndex]]
+        let selectedWindow = cycleWindows[matchingWindowIndices[selectedMatchIndex]]
         let didFocus = focus(selectedWindow)
         resetCycle()
         return didFocus
@@ -186,10 +192,12 @@ final class WindowCycler {
     private func resetCycle() {
         cycleProcessIdentifier = nil
         cycleApplicationName = "Windows"
+        cycleApplicationIcon = nil
         cycleQuery = ""
         cycleWindows = []
+        matchingWindowIndices = []
         visibleWindowIndices = []
-        selectedVisibleIndex = 0
+        selectedMatchIndex = 0
         lastCycleDate = .distantPast
     }
 
@@ -199,24 +207,28 @@ final class WindowCycler {
             return nil
         }
 
+        let selectedWindowIndex = matchingWindowIndices.isEmpty ? nil : matchingWindowIndices[selectedMatchIndex]
+        let visibleSelectedIndex = selectedWindowIndex.flatMap { visibleWindowIndices.firstIndex(of: $0) } ?? 0
+
         return WindowCycleResult(
             appName: cycleApplicationName,
+            appIcon: cycleApplicationIcon,
             query: cycleQuery,
-            windows: visibleWindowIndices.enumerated().map { visibleIndex, windowIndex in
+            windows: visibleWindowIndices.map { windowIndex in
                 WindowCycleItem(
                     id: "\(cycleProcessIdentifier)-\(windowIndex)-\(title(for: cycleWindows[windowIndex]))",
                     title: title(for: cycleWindows[windowIndex])
                 )
             },
-            selectedIndex: visibleWindowIndices.isEmpty ? 0 : min(selectedVisibleIndex, visibleWindowIndices.count - 1)
+            selectedIndex: visibleWindowIndices.isEmpty ? 0 : visibleSelectedIndex
         )
     }
 
     private func refreshVisibleWindows() {
         if cycleQuery.isEmpty {
-            visibleWindowIndices = Array(cycleWindows.indices)
+            matchingWindowIndices = Array(cycleWindows.indices)
         } else {
-            visibleWindowIndices = matcher.rankedMatches(
+            matchingWindowIndices = matcher.rankedMatches(
                 query: cycleQuery,
                 candidates: Array(cycleWindows.indices),
                 name: { [weak self] index in
@@ -230,7 +242,24 @@ final class WindowCycler {
             .map(\.item)
         }
 
-        selectedVisibleIndex = 0
+        selectedMatchIndex = 0
+        refreshVisibleWindowSlice()
+    }
+
+    private func refreshVisibleWindowSlice() {
+        guard !matchingWindowIndices.isEmpty else {
+            visibleWindowIndices = []
+            selectedMatchIndex = 0
+            return
+        }
+
+        selectedMatchIndex = min(max(selectedMatchIndex, 0), matchingWindowIndices.count - 1)
+
+        let visibleLimit = min(preferences.maxListEntries, matchingWindowIndices.count)
+        let centeredStart = selectedMatchIndex - visibleLimit / 2
+        let maxStart = matchingWindowIndices.count - visibleLimit
+        let start = min(max(centeredStart, 0), maxStart)
+        visibleWindowIndices = Array(matchingWindowIndices[start..<(start + visibleLimit)])
     }
 
     private func title(for window: AXUIElement) -> String {

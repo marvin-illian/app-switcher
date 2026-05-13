@@ -5,6 +5,7 @@ struct RunningAppInfo: Identifiable {
     let bundleIdentifier: String
     let processIdentifier: pid_t
     let application: NSRunningApplication
+    let icon: NSImage?
 
     var id: String {
         "\(bundleIdentifier)-\(processIdentifier)"
@@ -38,7 +39,8 @@ final class RunningAppProvider {
                     name: name,
                     bundleIdentifier: bundleIdentifier,
                     processIdentifier: application.processIdentifier,
-                    application: application
+                    application: application,
+                    icon: application.icon
                 )
             }
             .sorted { lhs, rhs in

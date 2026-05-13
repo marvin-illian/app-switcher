@@ -20,12 +20,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let switchSessionState = SwitchSessionState(
             appProvider: RunningAppProvider(),
             matcher: FuzzyMatcher(),
-            overlay: overlayWindowController
+            overlay: overlayWindowController,
+            preferences: preferences
         )
         let keyboardMonitor = KeyboardMonitor(
             session: switchSessionState,
             preferences: preferences,
-            windowCycler: WindowCycler(),
+            windowCycler: WindowCycler(preferences: preferences),
             onWindowCycle: { [weak overlayWindowController] result in
                 overlayWindowController?.showWindowCycle(result)
             },
@@ -73,6 +74,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(policy)
         menuBarController?.setVisible(preferences.showMenuBarIcon)
         overlayWindowController?.setLiquidGlassEnabled(preferences.enableLiquidGlass)
+        overlayWindowController?.setShowsIcons(preferences.showOverlayIcons)
     }
 
     @objc private func showSettings() {
