@@ -53,7 +53,7 @@ final class WindowCycler {
 
         let processIdentifier = frontmostApplication.processIdentifier
         let appElement = AXUIElementCreateApplication(processIdentifier)
-        let latestWindows = windowElements(for: appElement).filter(isCycleableWindow)
+        let latestWindows = cycleableWindows(for: appElement)
 
         guard !latestWindows.isEmpty else {
             resetCycle()
@@ -134,16 +134,46 @@ final class WindowCycler {
     }
 
     private func windowElements(for appElement: AXUIElement) -> [AXUIElement] {
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(
-            appElement,
-            kAXWindowsAttribute as CFString,
-            &value
-        ) == .success else {
+        elementArrayAttribute(kAXWindowsAttribute as CFString, for: appElement)
+    }
+
+    private func cycleableWindows(for appElement: AXUIElement) -> [AXUIElement] {
+        let candidates = windowElements(for: appElement)
+            + childWindowElements(for: appElement)
+            + [
+            focusedWindow(for: appElement),
+            mainWindow(for: appElement)
+        ].compactMap { $0 }
+
+        return uniqueWindows(candidates.filter(isCycleableWindow))
+    }
+
+    private func childWindowElements(for appElement: AXUIElement) -> [AXUIElement] {
+        let children = uniqueWindows(
+            elementArrayAttribute(kAXChildrenAttribute as CFString, for: appElement)
+                + elementArrayAttribute(kAXVisibleChildrenAttribute as CFString, for: appElement)
+        )
+
+        return children.flatMap { windowDescendants(of: $0, remainingDepth: 2) }
+    }
+
+    private func windowDescendants(of element: AXUIElement, remainingDepth: Int) -> [AXUIElement] {
+        if isCycleableWindow(element) {
+            return [element]
+        }
+
+        guard remainingDepth > 0 else {
             return []
         }
 
-        return value as? [AXUIElement] ?? []
+        let children = uniqueWindows(
+            elementArrayAttribute(kAXChildrenAttribute as CFString, for: element)
+                + elementArrayAttribute(kAXVisibleChildrenAttribute as CFString, for: element)
+        )
+
+        return children.flatMap {
+            windowDescendants(of: $0, remainingDepth: remainingDepth - 1)
+        }
     }
 
     private func focusedWindow(for appElement: AXUIElement) -> AXUIElement? {
@@ -159,13 +189,31 @@ final class WindowCycler {
         return value as! AXUIElement?
     }
 
-    private func isCycleableWindow(_ window: AXUIElement) -> Bool {
-        if let role = stringAttribute(kAXRoleAttribute as CFString, for: window),
-           role != kAXWindowRole {
-            return false
+    private func mainWindow(for appElement: AXUIElement) -> AXUIElement? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            appElement,
+            kAXMainWindowAttribute as CFString,
+            &value
+        ) == .success else {
+            return nil
         }
 
-        return true
+        return value as! AXUIElement?
+    }
+
+    private func uniqueWindows(_ windows: [AXUIElement]) -> [AXUIElement] {
+        var uniqueWindows: [AXUIElement] = []
+
+        for window in windows where !uniqueWindows.contains(where: { CFEqual($0, window) }) {
+            uniqueWindows.append(window)
+        }
+
+        return uniqueWindows
+    }
+
+    private func isCycleableWindow(_ window: AXUIElement) -> Bool {
+        stringAttribute(kAXRoleAttribute as CFString, for: window) == kAXWindowRole
     }
 
     private func focus(_ window: AXUIElement) -> Bool {
@@ -278,6 +326,15 @@ final class WindowCycler {
         }
 
         return value as? Bool
+    }
+
+    private func elementArrayAttribute(_ attribute: CFString, for element: AXUIElement) -> [AXUIElement] {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, attribute, &value) == .success else {
+            return []
+        }
+
+        return value as? [AXUIElement] ?? []
     }
 
     private func stringAttribute(_ attribute: CFString, for element: AXUIElement) -> String? {
