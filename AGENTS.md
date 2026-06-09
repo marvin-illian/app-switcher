@@ -25,7 +25,7 @@ This is a small native macOS Swift/AppKit utility. Keep changes focused on the E
 - Preserve the no-query activation-key pass-through behavior and the synthetic-event marker guard.
 - Keep the search overlay hidden until the query is non-empty.
 - Once any query character has been typed in a session, keep the search overlay visible even if Backspace deletes the query back to empty.
-- Empty-after-typing app switcher state should still support Up/Down selection and activation of the highlighted visible app.
+- Empty-after-typing app switcher state should show the app list without a default highlight. Releasing the activation key should not switch unless Up/Down explicitly selected an app first.
 - Keep the same-app window overlay visible across repeated backtick presses. Do not focus the highlighted window until Command is released.
 - Same-app window cycling supports `Command` + `Shift` + backtick for reverse cycling and should include minimized windows where Accessibility exposes them.
 - Same-app window cycling also supports Up/Down arrow navigation and fuzzy-search typing while the overlay is open.

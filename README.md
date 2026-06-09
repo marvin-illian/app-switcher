@@ -78,7 +78,7 @@ AppSwitcher consumes the configured activation key-down event to enter switch mo
 
 Those synthesized events carry a private `eventSourceUserData` marker. The event tap checks for that marker and passes the replacement events through instead of treating them as a new activation.
 
-While switch mode is active, alphanumeric key events, Backspace, and Up/Down arrows are consumed so query text and navigation do not leak into the foreground app. Activation-key repeat events are ignored. Once a query has been typed, the overlay stays open even if Backspace deletes the query back to empty. In that empty-after-typing state, Up/Down still navigates the running-app list and releasing the activation key selects the highlighted app.
+While switch mode is active, alphanumeric key events, Backspace, and Up/Down arrows are consumed so query text and navigation do not leak into the foreground app. Activation-key repeat events are ignored. Once a query has been typed, the overlay stays open even if Backspace deletes the query back to empty. In that empty-after-typing state, the running-app list is shown without a default highlight. Releasing the activation key does not switch unless Up/Down explicitly selects an app first.
 
 Only bare activation-key presses enter switch mode. Modified shortcuts such as `Command` + `Option` + Escape are passed through to macOS.
 
@@ -116,8 +116,9 @@ The app and window overlays respect the configured maximum list-entry count as a
 - Hold Escape without typing: no overlay should appear.
 - Press and release Escape without typing: the foreground app should receive a normal Escape.
 - Hold Escape, type random letters with no match, release: nothing should switch.
-- Hold Escape, type `saf`, press Backspace until the query is empty: the overlay should stay open.
-- With that emptied query still open, use Up/Down and release Escape: the highlighted visible app should activate.
+- Hold Escape, type `saf`, press Backspace until the query is empty: the overlay should stay open without a highlighted app.
+- With that emptied query still open, release Escape: nothing should switch.
+- With that emptied query still open, use Up/Down and release Escape: the highlighted app should activate.
 - Continue typing after deleting to empty, release: the corrected query should be used.
 - Hold Escape, type a query with multiple matches, use Up/Down, release: the highlighted app should activate.
 - Set maximum list entries to a small value, then use Up/Down in a larger app result set: the visible list should scroll while selection continues through all matches.

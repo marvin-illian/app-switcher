@@ -13,6 +13,7 @@ final class SwitchSessionState {
     private var rankedMatches: [FuzzyMatch<RunningAppInfo>] = []
     private var selectedIndex = 0
     private var hasTypedQuery = false
+    private var hasExplicitEmptySelection = false
 
     private(set) var isActive = false
     private(set) var query = ""
@@ -42,6 +43,7 @@ final class SwitchSessionState {
         query = ""
         selectedIndex = 0
         hasTypedQuery = false
+        hasExplicitEmptySelection = false
         appSnapshot = appProvider.runningApps()
         refreshMatches()
     }
@@ -54,6 +56,7 @@ final class SwitchSessionState {
         query.append(character)
         selectedIndex = 0
         hasTypedQuery = true
+        hasExplicitEmptySelection = false
         refreshMatches()
         showOverlayIfNeeded()
     }
@@ -65,6 +68,7 @@ final class SwitchSessionState {
 
         query.removeLast()
         selectedIndex = 0
+        hasExplicitEmptySelection = false
         refreshMatches()
         showOverlayIfNeeded()
     }
@@ -87,7 +91,7 @@ final class SwitchSessionState {
         if !hasTypedQuery {
             selectedApplication = nil
         } else if query.isEmpty {
-            selectedApplication = selectedVisibleApplication?.application
+            selectedApplication = hasExplicitEmptySelection ? selectedVisibleApplication?.application : nil
         } else if rankedMatches.isEmpty {
             selectedApplication = nil
         } else {
@@ -108,6 +112,7 @@ final class SwitchSessionState {
         query = ""
         selectedIndex = 0
         hasTypedQuery = false
+        hasExplicitEmptySelection = false
         appSnapshot = []
         rankedMatches = []
         overlay.hide()
@@ -131,7 +136,7 @@ final class SwitchSessionState {
                     name: app.name,
                     subtitle: app.bundleIdentifier,
                     score: nil,
-                    isHighlighted: range.lowerBound + offset == selectedIndex,
+                    isHighlighted: hasExplicitEmptySelection && range.lowerBound + offset == selectedIndex,
                     icon: app.icon
                 )
             } : []
@@ -171,7 +176,12 @@ final class SwitchSessionState {
             return
         }
 
-        selectedIndex = (selectedIndex + offset + count) % count
+        if query.isEmpty, !hasExplicitEmptySelection {
+            hasExplicitEmptySelection = true
+            selectedIndex = offset > 0 ? 0 : count - 1
+        } else {
+            selectedIndex = (selectedIndex + offset + count) % count
+        }
         refreshMatches()
         overlay.show()
     }
